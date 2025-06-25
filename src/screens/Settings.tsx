@@ -1,16 +1,14 @@
-import {
-  DialogWrapper,
-  AnimatedTextBlockWrapper,
-} from "@/components/DialogWrapper";
-import { cn } from "@/utils";
+import React from "react";
 import { useAtom } from "jotai";
-import { getDefaultStore } from "jotai";
-import { settingsAtom, settingsSavedAtom } from "@/store/settings";
 import { screenAtom } from "@/store/screens";
-import { X, Save, User, Globe, Mic, MessageSquare, Bot, Key, Sparkles, Eye, EyeOff } from "lucide-react";
-import * as React from "react";
+import { settingsAtom, settingsSavedAtom } from "@/store/settings";
 import { apiTokenAtom } from "@/store/tokens";
+import { getDefaultStore } from "jotai";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
+import { cn } from "@/utils";
+import {
+  Eye, EyeOff, Sparkles, X, User, Globe, Mic, MessageSquare, Bot, Key, Save
+} from "lucide-react";
 
 // Enhanced Button Component
 const Button = React.forwardRef<
@@ -38,7 +36,7 @@ const Button = React.forwardRef<
 
   return (
     <button
-      className={cn(baseStyles, variants[variant], sizes[size], className)}
+      className={cn(baseStyles, variants[variant as keyof typeof variants], sizes[size], className)}
       ref={ref}
       {...props}
     />
@@ -595,3 +593,5 @@ export const Settings: React.FC = () => {
     </div>
   );
 };
+
+export default Settings;

@@ -1,13 +1,10 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useAtom } from "jotai";
-import { getDefaultStore } from "jotai";
 import { userProfileAtom, profileSavedAtom, UserProfile } from "@/store/profile";
 import { screenAtom } from "@/store/screens";
-import { useAuthContext } from "@/components/AuthProvider";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 import { useProfile } from "@/hooks/useProfile";
-import { ImageWithFallback } from "@/components/ImageWithFallback";
 import { profileService } from "@/services/profileService";
 import {
   X,
@@ -20,8 +17,6 @@ import {
   MapPin,
   Globe,
   Phone,
-  Upload,
-  Image as ImageIcon,
   Sparkles,
   Edit3,
   Plus,
@@ -33,6 +28,8 @@ import {
   Bug
 } from "lucide-react";
 import { cn } from "@/utils";
+import imageCompression from 'browser-image-compression';
+import { useAuthContext } from '@/components/AuthProvider';
 
 // Enhanced Button Component
 const Button = React.forwardRef<
@@ -233,162 +230,6 @@ const Label = React.forwardRef<
 });
 Label.displayName = "Label";
 
-// FIXED: Photo Upload Component with proper file validation
-const PhotoUpload = ({ 
-  label, 
-  currentPhoto, 
-  onPhotoChange, 
-  aspectRatio = "square",
-  icon = Camera,
-  loading = false,
-  showDebugInfo = false
-}: {
-  label: string;
-  currentPhoto?: string;
-  onPhotoChange: (photo: string | File) => void;
-  aspectRatio?: "square" | "cover";
-  icon?: any;
-  loading?: boolean;
-  showDebugInfo?: boolean;
-}) => {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      console.log('File selected:', file.name, file.type, file.size);
-      
-      // FIXED: Validate file type properly
-      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
-      if (!allowedTypes.includes(file.type.toLowerCase())) {
-        console.error('Invalid file type:', file.type, 'Allowed:', allowedTypes);
-        alert(`Invalid file type: ${file.type}. Please select a JPEG, PNG, WebP, or GIF image.`);
-        return;
-      }
-      
-      // Validate file size (5MB limit)
-      const maxSize = 5 * 1024 * 1024; // 5MB
-      if (file.size > maxSize) {
-        console.error('File too large:', file.size, 'Max:', maxSize);
-        alert('File size too large. Please select an image smaller than 5MB.');
-        return;
-      }
-      
-      // Convert to base64 for immediate preview
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const result = e.target?.result as string;
-        console.log('File converted to base64, length:', result.length);
-        
-        // FIXED: Validate the base64 data before using it
-        if (profileService.validateImageData(result)) {
-          onPhotoChange(result);
-        } else {
-          console.error('Generated base64 data is invalid');
-          alert('Failed to process the image. Please try a different file.');
-        }
-      };
-      reader.onerror = (error) => {
-        console.error('Error reading file:', error);
-        alert('Failed to read the file. Please try again.');
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleRemovePhoto = () => {
-    onPhotoChange("");
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-  };
-
-  const handleRetryPhoto = () => {
-    // Trigger file input again
-    fileInputRef.current?.click();
-  };
-
-  const IconComponent = icon;
-
-  console.log('PhotoUpload render:', { label, currentPhoto: currentPhoto?.substring(0, 50) + '...', loading });
-
-  return (
-    <div className="space-y-3">
-      <Label>{label}</Label>
-      
-      <div className={cn(
-        "relative group rounded-xl border-2 border-dashed border-slate-600 hover:border-cyan-500/50 transition-all duration-200 overflow-hidden",
-        aspectRatio === "square" ? "aspect-square" : "aspect-[3/1]"
-      )}>
-        {loading && (
-          <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-20">
-            <div className="text-center">
-              <Loader2 className="size-6 animate-spin text-cyan-400 mx-auto mb-2" />
-              <p className="text-white text-sm">Processing image...</p>
-            </div>
-          </div>
-        )}
-        
-        {currentPhoto ? (
-          <>
-            <ImageWithFallback
-              src={currentPhoto}
-              alt={label}
-              className="w-full h-full"
-              errorMessage="Failed to load image"
-              onRetry={handleRetryPhoto}
-              showDebugInfo={showDebugInfo}
-            />
-            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-2">
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={loading}
-              >
-                <Edit3 className="size-4 mr-1" />
-                Change
-              </Button>
-              <Button
-                size="sm"
-                variant="danger"
-                onClick={handleRemovePhoto}
-                disabled={loading}
-              >
-                <Trash2 className="size-4 mr-1" />
-                Remove
-              </Button>
-            </div>
-          </>
-        ) : (
-          <div 
-            className="w-full h-full flex flex-col items-center justify-center gap-3 cursor-pointer hover:bg-slate-800/50 transition-colors"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <div className="p-3 rounded-full bg-cyan-500/20 border border-cyan-500/30">
-              <IconComponent className="size-6 text-cyan-400" />
-            </div>
-            <div className="text-center">
-              <p className="text-white font-medium text-sm">Upload {label}</p>
-              <p className="text-slate-400 text-xs">Click to browse files</p>
-              <p className="text-slate-500 text-xs mt-1">JPEG, PNG, WebP, GIF (max 5MB)</p>
-            </div>
-          </div>
-        )}
-        
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
-          onChange={handleFileSelect}
-          className="hidden"
-          disabled={loading}
-        />
-      </div>
-    </div>
-  );
-};
-
 // Interest Tags Component
 const InterestTags = ({ 
   interests, 
@@ -551,11 +392,24 @@ const SuccessMessage = ({ message }: { message: string }) => (
 const DEFAULT_AVATAR = '/public/images/robot.svg';
 const DEFAULT_COVER = '/public/images/layer.png';
 
+// Add helper function for image src
+function getImageSrc(image: string | undefined, fallback: string, cacheBuster: string) {
+  if (!image) return fallback;
+  if (image.startsWith('data:')) return image;
+  return image + cacheBuster;
+}
+
+// Helper to ensure any storage path is converted to a public URL
+function ensurePublicUrl(image: string | undefined): string | undefined {
+  if (!image) return undefined;
+  if (image.startsWith('http') || image.startsWith('data:')) return image;
+  return profileService.getImageUrl(image);
+}
+
 export const Profile: React.FC = () => {
   const [localProfile, setLocalProfile] = useAtom(userProfileAtom);
   const [, setScreenState] = useAtom(screenAtom);
   const [, setProfileSaved] = useAtom(profileSavedAtom);
-  const { user } = useAuthContext();
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
@@ -564,6 +418,10 @@ export const Profile: React.FC = () => {
     cover: boolean;
   }>({ profile: false, cover: false });
   const [debugMode, setDebugMode] = useState(false);
+  const [imageLoading, setImageLoading] = useState({ profile: true, cover: true });
+  const [cacheBuster, setCacheBuster] = useState({ profile: '', cover: '' });
+  const { user } = useAuthContext();
+  const [previewImages, setPreviewImages] = useState<{ profilePhoto?: string; coverPhoto?: string }>({});
 
   // Use the profile hook for database operations
   const { 
@@ -584,7 +442,11 @@ export const Profile: React.FC = () => {
   useEffect(() => {
     if (dbProfile) {
       console.log('Initializing local profile from database:', dbProfile);
-      setLocalProfile(dbProfile);
+      setLocalProfile({
+        ...dbProfile,
+        profilePhoto: ensurePublicUrl(dbProfile.profilePhoto),
+        coverPhoto: ensurePublicUrl(dbProfile.coverPhoto),
+      });
     }
   }, [dbProfile, setLocalProfile]);
 
@@ -659,52 +521,43 @@ export const Profile: React.FC = () => {
 
   const handlePhotoChange = async (field: 'profilePhoto' | 'coverPhoto', photoData: string | File) => {
     console.log('Photo change requested:', field, typeof photoData);
-    
     if (!photoData) {
       updateProfile({ [field]: '' });
+      setPreviewImages(prev => ({ ...prev, [field]: undefined }));
+      setCacheBuster(prev => ({ ...prev, [field === 'profilePhoto' ? 'profile' : 'cover']: '' }));
       return;
     }
-
-    // If it's a string (base64), validate and use it directly for immediate preview
+    if (!user?.id) {
+      setErrors(prev => ({ ...prev, [field]: 'User ID not found.' }));
+      return;
+    }
     if (typeof photoData === 'string') {
-      console.log('Setting photo data directly:', field, photoData.substring(0, 50) + '...');
-      
-      // FIXED: Validate the image data before setting it
+      // Only use base64 for preview, never for saving
       if (profileService.validateImageData(photoData)) {
-        updateProfile({ [field]: photoData });
+        setPreviewImages(prev => ({ ...prev, [field]: photoData }));
+        setCacheBuster(prev => ({ ...prev, [field === 'profilePhoto' ? 'profile' : 'cover']: `?t=${Date.now()}` }));
       } else {
-        console.error('Invalid image data provided:', photoData.substring(0, 100));
         setErrors(prev => ({ ...prev, [field]: 'Invalid image data. Please try a different file.' }));
       }
     } else {
-      // If it's a File object, convert to base64 for preview
       setPhotoUploading(prev => ({ ...prev, [field === 'profilePhoto' ? 'profile' : 'cover']: true }));
-      
       try {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const result = e.target?.result as string;
-          console.log('File converted to base64 for preview:', field, result.substring(0, 50) + '...');
-          
-          // FIXED: Validate the converted base64 data
-          if (profileService.validateImageData(result)) {
-            updateProfile({ [field]: result });
-          } else {
-            console.error('Invalid base64 data generated from file');
-            setErrors(prev => ({ ...prev, [field]: 'Failed to process the image. Please try a different file.' }));
-          }
-          
-          setPhotoUploading(prev => ({ ...prev, [field === 'profilePhoto' ? 'profile' : 'cover']: false }));
-        };
-        reader.onerror = (error) => {
-          console.error('Error reading file:', error);
-          setErrors(prev => ({ ...prev, [field]: 'Failed to read the file. Please try again.' }));
-          setPhotoUploading(prev => ({ ...prev, [field === 'profilePhoto' ? 'profile' : 'cover']: false }));
-        };
-        reader.readAsDataURL(photoData);
+        // Compress/resize image
+        const compressedFile = await imageCompression(photoData, {
+          maxSizeMB: 0.5,
+          maxWidthOrHeight: 512,
+          useWebWorker: true
+        });
+        // Upload to Supabase Storage
+        const bucket = field === 'profilePhoto' ? 'profile-photos' : 'cover-photos';
+        const storagePath = await profileService.uploadPhoto(compressedFile, bucket, user.id);
+        // Save only the storage path in the profile
+        updateProfile({ [field]: storagePath });
+        setPreviewImages(prev => ({ ...prev, [field]: undefined }));
+        setCacheBuster(prev => ({ ...prev, [field === 'profilePhoto' ? 'profile' : 'cover']: `?t=${Date.now()}` }));
       } catch (error) {
-        console.error('Error processing file:', error);
-        setErrors(prev => ({ ...prev, [field]: 'Error processing the file. Please try again.' }));
+        setErrors(prev => ({ ...prev, [field]: 'Error uploading the file. Please try again.' }));
+      } finally {
         setPhotoUploading(prev => ({ ...prev, [field === 'profilePhoto' ? 'profile' : 'cover']: false }));
       }
     }
@@ -826,11 +679,18 @@ export const Profile: React.FC = () => {
               {/* Cover Photo */}
               <div className="relative w-full h-40 md:h-56 rounded-2xl overflow-hidden shadow-lg group bg-slate-800">
                 <img
-                  src={localProfile.coverPhoto || DEFAULT_COVER}
-                  alt="Cover"
+                  crossOrigin="anonymous"
+                  src={getImageSrc(previewImages.coverPhoto || ensurePublicUrl(localProfile.coverPhoto), DEFAULT_COVER, cacheBuster.cover)}
+                  alt="User cover photo"
+                  aria-label="User cover photo"
                   className="w-full h-full object-cover object-center transition-all duration-300 group-hover:brightness-75"
                   onError={e => { (e.currentTarget as HTMLImageElement).src = DEFAULT_COVER; }}
+                  onLoad={() => setImageLoading(prev => ({ ...prev, cover: false }))}
+                  style={{ display: imageLoading.cover ? 'none' : 'block' }}
                 />
+                {imageLoading.cover && (
+                  <div className="absolute inset-0 bg-slate-700 animate-pulse" />
+                )}
                 {/* Overlay for edit/remove */}
                 <div className="absolute inset-0 flex items-center justify-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity bg-black/40">
                   <Button
@@ -875,11 +735,18 @@ export const Profile: React.FC = () => {
               <div className="absolute left-1/2 -bottom-12 md:-bottom-16 transform -translate-x-1/2 z-20 group">
                 <div className="relative w-24 h-24 md:w-32 md:h-32 rounded-full border-4 border-white shadow-xl overflow-hidden bg-slate-900">
                   <img
-                    src={localProfile.profilePhoto || DEFAULT_AVATAR}
-                    alt="Profile"
+                    crossOrigin="anonymous"
+                    src={getImageSrc(previewImages.profilePhoto || ensurePublicUrl(localProfile.profilePhoto), DEFAULT_AVATAR, cacheBuster.profile)}
+                    alt="User profile photo"
+                    aria-label="User profile photo"
                     className="w-full h-full object-cover object-center transition-all duration-300 group-hover:brightness-75"
                     onError={e => { (e.currentTarget as HTMLImageElement).src = DEFAULT_AVATAR; }}
+                    onLoad={() => setImageLoading(prev => ({ ...prev, profile: false }))}
+                    style={{ display: imageLoading.profile ? 'none' : 'block' }}
                   />
+                  {imageLoading.profile && (
+                    <div className="absolute inset-0 bg-slate-700 animate-pulse rounded-full" />
+                  )}
                   {/* Overlay for edit/remove */}
                   <div className="absolute inset-0 flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/40">
                     <Button
@@ -1119,7 +986,7 @@ export const Profile: React.FC = () => {
                 onClick={handleSave}
                 className="flex-1 lg:flex-none min-w-[140px]"
                 loading={isSubmitting}
-                disabled={isSubmitting}
+                disabled={isSubmitting || photoUploading.profile || photoUploading.cover}
               >
                 <Save className="size-4 mr-2" />
                 Save Profile
@@ -1131,3 +998,5 @@ export const Profile: React.FC = () => {
     </div>
   );
 };
+
+export default Profile;

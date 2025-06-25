@@ -9,6 +9,9 @@ interface UseUserSearchReturn {
   setSearchTerm: (term: string) => void;
   searchUsers: (term?: string) => Promise<void>;
   sendConnectionRequest: (userId: string, type?: 'friend' | 'follow' | 'collaborate') => Promise<void>;
+  acceptConnection: (connectionId: string, userId: string) => Promise<void>;
+  declineConnection: (connectionId: string, userId: string) => Promise<void>;
+  cancelConnection: (connectionId: string, userId: string) => Promise<void>;
   createDirectMessage: (userId: string) => Promise<string>;
 }
 
@@ -57,6 +60,51 @@ export const useUserSearch = (): UseUserSearchReturn => {
     }
   }, []);
 
+  // Accept a connection request
+  const acceptConnection = useCallback(async (connectionId: string, userId: string) => {
+    try {
+      await chatService.respondToConnectionRequest(connectionId, 'accepted');
+      setUsers(prev => prev.map(user =>
+        user.userId === userId
+          ? { ...user, connectionStatus: 'accepted' }
+          : user
+      ));
+    } catch (error) {
+      console.error('Accept connection error:', error);
+      throw error;
+    }
+  }, []);
+
+  // Decline a connection request
+  const declineConnection = useCallback(async (connectionId: string, userId: string) => {
+    try {
+      await chatService.respondToConnectionRequest(connectionId, 'declined');
+      setUsers(prev => prev.map(user =>
+        user.userId === userId
+          ? { ...user, connectionStatus: 'declined' }
+          : user
+      ));
+    } catch (error) {
+      console.error('Decline connection error:', error);
+      throw error;
+    }
+  }, []);
+
+  // Cancel a connection request
+  const cancelConnection = useCallback(async (connectionId: string, userId: string) => {
+    try {
+      await chatService.cancelConnectionRequest(connectionId);
+      setUsers(prev => prev.map(user =>
+        user.userId === userId
+          ? { ...user, connectionStatus: 'none' }
+          : user
+      ));
+    } catch (error) {
+      console.error('Cancel connection error:', error);
+      throw error;
+    }
+  }, []);
+
   // Create direct message
   const createDirectMessage = useCallback(async (userId: string): Promise<string> => {
     try {
@@ -91,6 +139,9 @@ export const useUserSearch = (): UseUserSearchReturn => {
     setSearchTerm,
     searchUsers,
     sendConnectionRequest,
+    acceptConnection,
+    declineConnection,
+    cancelConnection,
     createDirectMessage,
   };
 };

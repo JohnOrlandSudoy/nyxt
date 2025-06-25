@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { Button } from "./ui/button";
-import { Settings, Check, User, LogOut, UserCircle, MessageCircle, Menu, X } from "lucide-react";
+import { Settings, Check, LogOut, UserCircle, MessageCircle, Menu, X } from "lucide-react";
 import { useAtom } from "jotai";
 import { screenAtom } from "@/store/screens";
 import { conversationAtom } from "@/store/conversation";
@@ -9,6 +9,9 @@ import { profileSavedAtom } from "@/store/profile";
 import { useAuthContext } from "./AuthProvider";
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useEffect } from "react";
+import { profileService } from "@/services/profileService";
+
+const DEFAULT_AVATAR = '/public/images/robot.svg';
 
 // Enhanced NyxtGen Logo Component with responsive design
 const NyxtGenLogo = ({ className = "", isMobile = false }: { className?: string; isMobile?: boolean }) => {
@@ -107,7 +110,8 @@ const MobileMenu = ({
   onProfile, 
   onChat,
   settingsSaved,
-  profileSaved 
+  profileSaved,
+  profilePhoto
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -118,6 +122,7 @@ const MobileMenu = ({
   onChat: () => void;
   settingsSaved: boolean;
   profileSaved: boolean;
+  profilePhoto?: string;
 }) => {
   return (
     <AnimatePresence>
@@ -154,8 +159,13 @@ const MobileMenu = ({
             {user && (
               <div className="p-6 border-b border-slate-700/50">
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-r from-emerald-400 to-cyan-400 flex items-center justify-center">
-                    <User className="size-6 text-white" />
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-r from-emerald-400 to-cyan-400 flex items-center justify-center overflow-hidden">
+                    <img
+                      src={profilePhoto || DEFAULT_AVATAR}
+                      alt="User avatar"
+                      className="w-full h-full object-cover rounded-full"
+                      onError={e => { (e.currentTarget as HTMLImageElement).src = DEFAULT_AVATAR; }}
+                    />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-white font-medium text-sm truncate">{user.email}</p>
@@ -251,7 +261,7 @@ const MobileMenu = ({
 };
 
 // Premium User Info Component for Desktop Header
-const HeaderUserInfo = ({ user, onSignOut }: { user: any; onSignOut: () => void }) => {
+const HeaderUserInfo = ({ user, onSignOut, profilePhoto }: { user: any; onSignOut: () => void; profilePhoto?: string }) => {
   return (
     <motion.div
       initial={{ opacity: 0, x: 20 }}
@@ -261,8 +271,13 @@ const HeaderUserInfo = ({ user, onSignOut }: { user: any; onSignOut: () => void 
     >
       {/* User Avatar and Info */}
       <div className="flex items-center gap-3 px-4 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 backdrop-blur-sm">
-        <div className="w-8 h-8 rounded-full bg-gradient-to-r from-emerald-400 to-cyan-400 flex items-center justify-center">
-          <User className="size-4 text-white" />
+        <div className="w-8 h-8 rounded-full bg-gradient-to-r from-emerald-400 to-cyan-400 flex items-center justify-center overflow-hidden">
+          <img
+            src={profilePhoto || DEFAULT_AVATAR}
+            alt="User avatar"
+            className="w-full h-full object-cover rounded-full"
+            onError={e => { (e.currentTarget as HTMLImageElement).src = DEFAULT_AVATAR; }}
+          />
         </div>
         <div className="hidden xl:block">
           <p className="text-white font-medium text-sm leading-none">{user.email}</p>
@@ -291,6 +306,7 @@ export const Header = memo(() => {
   const { user, signOut } = useAuthContext();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [profilePhoto, setProfilePhoto] = useState<string | undefined>(undefined);
 
   // Detect mobile screen size
   useEffect(() => {
@@ -302,6 +318,30 @@ export const Header = memo(() => {
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
+
+  // Fetch user profile photo
+  useEffect(() => {
+    let isMounted = true;
+    async function fetchProfilePhoto() {
+      if (user?.id) {
+        try {
+          const dbProfile = await profileService.getUserProfile(user.id);
+          let photo: string | undefined = undefined;
+          if (dbProfile) {
+            const userProfile = profileService.convertToUserProfile(dbProfile);
+            photo = userProfile.profilePhoto;
+          }
+          if (isMounted) setProfilePhoto(photo);
+        } catch {
+          if (isMounted) setProfilePhoto(undefined);
+        }
+      } else {
+        setProfilePhoto(undefined);
+      }
+    }
+    fetchProfilePhoto();
+    return () => { isMounted = false; };
+  }, [user]);
 
   const handleSettings = () => {
     if (!conversation) {
@@ -342,7 +382,7 @@ export const Header = memo(() => {
         {/* Desktop Navigation */}
         <div className="hidden lg:flex items-center gap-4">
           {/* User Info (if authenticated) */}
-          {user && <HeaderUserInfo user={user} onSignOut={handleSignOut} />}
+          {user && <HeaderUserInfo user={user} onSignOut={handleSignOut} profilePhoto={profilePhoto} />}
           
           {/* Navigation Buttons */}
           <div className="flex items-center gap-3">
@@ -416,6 +456,7 @@ export const Header = memo(() => {
         onChat={handleChat}
         settingsSaved={settingsSaved}
         profileSaved={profileSaved}
+        profilePhoto={profilePhoto}
       />
     </>
   );

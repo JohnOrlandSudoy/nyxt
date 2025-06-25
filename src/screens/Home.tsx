@@ -1,12 +1,10 @@
-import { AnimatedWrapper } from "@/components/DialogWrapper";
 import React, { useEffect, useState } from "react";
 import { useAtom } from "jotai";
 import { screenAtom } from "@/store/screens";
-import { ArrowRight, Sparkles, Play, Zap, Brain, Video, MessageCircle, Star, Users, Shield, Globe, Rocket, ChevronDown } from "lucide-react";
+import { ArrowRight, Sparkles, Play, Zap, Brain, Video, MessageCircle, Star, Users, Shield, Globe } from "lucide-react";
 import AudioButton from "@/components/AudioButton";
-import { LogoText } from "@/components/LogoText";
-import gloriaVideo from "@/assets/video/gloria.mp4";
 import { motion, useScroll, useTransform, useInView } from "framer-motion";
+import gloriaVideo from "@/assets/video/gloria.mp4";
 
 // Premium Feature Card Component
 const FeatureCard = ({ 
@@ -486,3 +484,5 @@ export const Home: React.FC = () => {
     </div>
   );
 };
+
+export default Home;

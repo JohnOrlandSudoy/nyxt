@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuthContext } from '@/components/AuthProvider';
-import { chatService, ChatRoom, ChatMessage, UserForCollaboration } from '@/services/chatService';
+import { chatService, ChatRoom, ChatMessage } from '@/services/chatService';
+import { v4 as uuidv4 } from 'uuid';
+import { useProfile } from './useProfile';
 
 interface UseChatReturn {
   // Chat rooms
@@ -30,6 +32,7 @@ interface UseChatReturn {
 
 export const useChat = (): UseChatReturn => {
   const { user } = useAuthContext();
+  const { profile } = useProfile();
   
   // State
   const [chatRooms, setChatRooms] = useState<ChatRoom[]>([]);
@@ -88,28 +91,51 @@ export const useChat = (): UseChatReturn => {
     if (roomId) {
       await loadMessages(roomId);
       await chatService.markMessagesAsRead(roomId);
+      await loadChatRooms();
       await chatService.updateUserPresence('online', roomId);
     } else {
       await chatService.updateUserPresence('online');
     }
-  }, [loadMessages]);
+  }, [loadMessages, loadChatRooms]);
 
-  // Send message
+  // Send message with optimistic update
   const sendMessage = useCallback(async (
     content: string,
     messageType: 'text' | 'image' | 'file' | 'code' = 'text',
     replyTo?: string
   ) => {
-    if (!currentRoomId || !content.trim()) return;
+    if (!currentRoomId || !content.trim() || !user) return;
+
+    const optimisticId = uuidv4();
+    const optimisticMessage: ChatMessage = {
+      id: optimisticId,
+      room_id: currentRoomId,
+      sender_id: user.id,
+      sender_name: profile?.fullName || user.email || 'Me',
+      sender_photo: profile?.profilePhoto || '',
+      content: content.trim(),
+      message_type: messageType,
+      created_at: new Date().toISOString(),
+      status: 'sending',
+    };
+
+    // Optimistically add to UI
+    setCurrentRoomMessages(prev => [...prev, optimisticMessage]);
 
     try {
-      await chatService.sendMessage(currentRoomId, content.trim(), messageType, replyTo);
-      // Message will be added via real-time subscription
+      await chatService.sendMessage(currentRoomId, content.trim(), messageType, replyTo, optimisticId);
+      // The real-time subscription will update the message status to 'sent'
     } catch (error) {
       console.error('Send message error:', error);
+      // Update message status to 'failed'
+      setCurrentRoomMessages(prev =>
+        prev.map(msg =>
+          msg.id === optimisticId ? { ...msg, status: 'failed' } : msg
+        )
+      );
       throw error;
     }
-  }, [currentRoomId]);
+  }, [currentRoomId, user, profile]);
 
   // Create direct message
   const createDirectMessage = useCallback(async (userId: string): Promise<string> => {
@@ -158,7 +184,7 @@ export const useChat = (): UseChatReturn => {
     }
   }, [currentRoomId]);
 
-  // Set up real-time subscriptions for current room
+  // Set up real-time subscriptions with duplicate check
   useEffect(() => {
     if (!currentRoomId) return;
 
@@ -166,7 +192,18 @@ export const useChat = (): UseChatReturn => {
 
     const unsubscribe = chatService.subscribeToRoom(currentRoomId, {
       onMessage: (message) => {
-        setCurrentRoomMessages(prev => [...prev, message]);
+        setCurrentRoomMessages(prev => {
+          // If message is an update to an optimistic one
+          if (prev.some(m => m.id === message.id && m.status === 'sending')) {
+            return prev.map(m => m.id === message.id ? message : m);
+          }
+          // If message is new
+          if (!prev.some(m => m.id === message.id)) {
+            return [...prev, message];
+          }
+          // Already exists, do nothing
+          return prev;
+        });
         setIsConnected(true);
       },
       onTyping: (userId, isTyping) => {

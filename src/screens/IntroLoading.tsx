@@ -61,3 +61,5 @@ export const IntroLoading: React.FC = () => {
     </div>
   );
 };
+
+export default IntroLoading;

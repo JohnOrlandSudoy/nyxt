@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuthContext } from '@/components/AuthProvider';
-import { profileService, ProfileWithInterests } from '@/services/profileService';
+import { profileService } from '@/services/profileService';
 import { UserProfile } from '@/store/profile';
 
 interface UseProfileReturn {

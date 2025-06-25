@@ -18,16 +18,19 @@ export interface ChatRoom {
 
 export interface ChatMessage {
   id: string;
+  room_id: string;
+  sender_id: string;
+  sender_name: string;
+  sender_photo?: string;
   content: string;
-  messageType: 'text' | 'image' | 'file' | 'system' | 'code' | 'ai_response';
-  senderId: string;
-  senderName: string;
-  senderPhoto?: string;
-  replyTo?: string;
-  replyContent?: string;
+  message_type: 'text' | 'image' | 'file' | 'code' | 'system';
+  created_at: string;
+  updated_at?: string;
+  edited_at?: string;
+  reply_to?: string;
+  reply_content?: string;
+  status?: 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
   metadata?: any;
-  createdAt: string;
-  editedAt?: string;
 }
 
 export interface UserForCollaboration {
@@ -38,7 +41,8 @@ export interface UserForCollaboration {
   profilePhoto?: string;
   location?: string;
   interests: string[];
-  connectionStatus: 'none' | 'pending' | 'accepted' | 'blocked' | 'declined';
+  connectionStatus: 'none' | 'pending' | 'accepted' | 'blocked' | 'declined' | 'received';
+  connectionId?: string;
   lastSeen: string;
   presenceStatus: 'online' | 'away' | 'busy' | 'offline';
 }
@@ -94,20 +98,24 @@ class ChatService {
 
       console.log('Chat rooms data received:', data);
 
-      return data?.map((room: any) => ({
-        id: room.room_id,
-        name: room.room_name,
-        type: room.room_type,
-        isPrivate: room.is_private,
-        participantCount: room.participant_count,
-        latestMessage: room.latest_message_content ? {
+      return data?.map((room: any) => {
+        const latestMessage = room.latest_message_content ? {
           content: room.latest_message_content,
-          createdAt: room.latest_message_created_at,
+          createdAt: room.latest_message_created_at ? new Date(room.latest_message_created_at.replace(' ', 'T')).toISOString() : new Date().toISOString(),
           senderName: room.latest_message_sender_name,
-        } : undefined,
-        unreadCount: room.unread_count || 0,
-        lastReadAt: room.last_read_at,
-      })) || [];
+        } : undefined;
+
+        return {
+          id: room.room_id,
+          name: room.room_name,
+          type: room.room_type,
+          isPrivate: room.is_private,
+          participantCount: room.participant_count,
+          latestMessage: latestMessage,
+          unreadCount: room.unread_count || 0,
+          lastReadAt: room.last_read_at,
+        };
+      }) || [];
     } catch (error) {
       console.error('Get chat rooms failed:', error);
       throw error;
@@ -197,16 +205,17 @@ class ChatService {
 
       return data?.map((msg: any) => ({
         id: msg.message_id,
+        room_id: msg.room_id,
         content: msg.content,
-        messageType: msg.message_type,
-        senderId: msg.sender_id,
-        senderName: msg.sender_name,
-        senderPhoto: msg.sender_photo,
-        replyTo: msg.reply_to,
-        replyContent: msg.reply_content,
+        message_type: msg.message_type,
+        sender_id: msg.sender_id,
+        sender_name: msg.sender_name,
+        sender_photo: msg.sender_photo,
+        reply_to: msg.reply_to,
+        reply_content: msg.reply_content,
         metadata: msg.metadata,
-        createdAt: msg.created_at,
-        editedAt: msg.edited_at,
+        created_at: msg.created_at ? new Date(msg.created_at.replace(' ', 'T')).toISOString() : new Date().toISOString(),
+        edited_at: msg.edited_at ? new Date(msg.edited_at.replace(' ', 'T')).toISOString() : undefined,
       })).reverse() || []; // Reverse to show oldest first
     } catch (error) {
       console.error('Get messages failed:', error);
@@ -265,18 +274,28 @@ class ChatService {
 
       console.log('User search results:', data?.length || 0, 'users found');
 
-      return data?.map((user: any) => ({
-        userId: user.user_id,
-        fullName: user.full_name,
-        email: user.email,
-        bio: user.bio,
-        profilePhoto: user.profile_photo,
-        location: user.location,
-        interests: user.interests || [],
-        connectionStatus: user.connection_status || 'none',
-        lastSeen: user.last_seen,
-        presenceStatus: user.presence_status || 'offline',
-      })) || [];
+      return data?.map((user: any) => {
+        let connectionStatus = user.connection_status || 'none';
+        // If the request is pending and the current user is NOT the one who sent it,
+        // it's a request they have received.
+        if (connectionStatus === 'pending' && !user.is_requester) {
+          connectionStatus = 'received';
+        }
+        
+        return {
+          userId: user.user_id,
+          fullName: user.full_name,
+          email: user.email,
+          bio: user.bio,
+          profilePhoto: user.profile_photo,
+          location: user.location,
+          interests: user.interests || [],
+          connectionStatus: connectionStatus,
+          connectionId: user.connection_id,
+          lastSeen: user.last_seen,
+          presenceStatus: user.presence_status || 'offline',
+        };
+      }) || [];
     } catch (error) {
       console.error('Search users failed:', error);
       throw error;
@@ -303,6 +322,28 @@ class ChatService {
       return data;
     } catch (error) {
       console.error('Send connection request failed:', error);
+      throw error;
+    }
+  }
+
+  // Cancel a connection request sent by the current user
+  async cancelConnectionRequest(connectionId: string): Promise<void> {
+    try {
+      console.log('Cancelling connection request:', { connectionId });
+      
+      const { error } = await supabase
+        .rpc('cancel_connection_request', {
+          connection_id_param: connectionId,
+        });
+
+      if (error) {
+        console.error('Error cancelling connection request:', error);
+        throw new Error(`Failed to cancel connection request: ${error.message}`);
+      }
+
+      console.log('Connection request cancelled');
+    } catch (error) {
+      console.error('Cancel connection request failed:', error);
       throw error;
     }
   }
@@ -519,19 +560,21 @@ class ChatService {
 
               if (data && data.length > 0) {
                 const msg = data[0];
-                callbacks.onMessage({
+                const newMessage: ChatMessage = {
                   id: msg.message_id,
+                  room_id: msg.room_id,
                   content: msg.content,
-                  messageType: msg.message_type,
-                  senderId: msg.sender_id,
-                  senderName: msg.sender_name,
-                  senderPhoto: msg.sender_photo,
-                  replyTo: msg.reply_to,
-                  replyContent: msg.reply_content,
+                  message_type: msg.message_type,
+                  sender_id: msg.sender_id,
+                  sender_name: msg.sender_name,
+                  sender_photo: msg.sender_photo,
+                  reply_to: msg.reply_to,
+                  reply_content: msg.reply_content,
                   metadata: msg.metadata,
-                  createdAt: msg.created_at,
-                  editedAt: msg.edited_at,
-                });
+                  created_at: msg.created_at,
+                  edited_at: msg.edited_at,
+                };
+                callbacks.onMessage(newMessage);
               }
             } catch (error) {
               console.error('Error fetching new message details:', error);
@@ -549,7 +592,7 @@ class ChatService {
         (payload) => {
           console.log('Presence update:', payload);
           
-          if (callbacks.onPresenceUpdate && payload.new) {
+          if (callbacks.onPresenceUpdate && payload.new && typeof payload.new === 'object' && 'user_id' in payload.new) {
             callbacks.onPresenceUpdate({
               userId: payload.new.user_id,
               status: payload.new.status,

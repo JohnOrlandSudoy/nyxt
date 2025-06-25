@@ -86,3 +86,5 @@ export const FinalScreen: React.FC = () => {
     </DialogWrapper>
   );
 };
+
+export default FinalScreen;

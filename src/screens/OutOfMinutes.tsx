@@ -18,3 +18,5 @@ export const OutOfMinutes: React.FC = () => {
     </DialogWrapper>
   );
 };
+
+export default OutOfMinutes;

@@ -216,7 +216,7 @@ class ProfileService {
 
         if (!profileError && profileData) {
           // Get interests separately
-          const { data: interestsData, error: interestsError } = await supabase
+          const { data: interestsData } = await supabase
             .from('user_interests')
             .select('interest')
             .eq('user_id', userId);
@@ -839,7 +839,7 @@ class ProfileService {
       
       // Check if user_profiles table exists
       try {
-        const { data: userProfilesTest, error: userProfilesError } = await supabase
+        const { error: userProfilesError } = await supabase
           .from('user_profiles')
           .select('count')
           .limit(1);
@@ -855,7 +855,7 @@ class ProfileService {
 
       // Check if old profiles table exists
       try {
-        const { data: profilesTest, error: profilesError } = await supabase
+        const { error: profilesError } = await supabase
           .from('profiles')
           .select('count')
           .limit(1);
@@ -871,7 +871,7 @@ class ProfileService {
 
       // Check if RPC functions exist
       try {
-        const { data: rpcTest, error: rpcError } = await supabase
+        const { error: rpcError } = await supabase
           .rpc('get_user_profile_with_interests', { profile_user_id: '00000000-0000-0000-0000-000000000000' });
         
         if (rpcError && rpcError.code !== 'PGRST116') {

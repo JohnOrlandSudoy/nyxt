@@ -19,3 +19,5 @@ export const Outage: React.FC = () => {
     </DialogWrapper>
   );
 };
+
+export default Outage;

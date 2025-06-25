@@ -6,57 +6,101 @@ import { useAuthGuard } from '@/hooks/useAuthGuard';
 import { useChat } from '@/hooks/useChat';
 import { useUserSearch } from '@/hooks/useUserSearch';
 import { useAuthContext } from '@/components/AuthProvider';
+import { profileService } from '@/services/profileService';
 import {
   MessageCircle,
   Send,
   Search,
   Users,
-  Plus,
   Settings,
   X,
-  UserPlus,
   MessageSquare,
   Clock,
   CheckCircle,
-  Circle,
   Loader2,
-  ArrowLeft,
-  Hash,
   Lock,
   Globe,
-  Crown,
-  Shield,
-  Star,
-  Heart,
   Code,
   Image as ImageIcon,
   File,
-  Zap,
-  Coffee,
-  Briefcase,
   MapPin,
-  Calendar,
-  Eye,
-  EyeOff,
-  UserCheck,
-  UserX,
   AlertCircle,
-  Check,
-  Menu,
-  ChevronLeft,
-  ChevronRight,
-  Minimize2,
-  Maximize2,
-  Smile,
   MoreVertical,
-  User
+  User,
+  Smile,
+  Menu,
+  Check,
+  XCircle,
+  MinusCircle,
 } from 'lucide-react';
 import { cn } from '@/utils';
 import { ChatMessage, ChatRoom, UserForCollaboration, UserConnection } from '@/services/chatService';
 import { chatService } from '@/services/chatService';
 import { FixedSizeList as List, ListChildComponentProps } from 'react-window';
+import { UserProfile } from '@/store/profile';
 
 const DEFAULT_AVATAR = '/public/images/robot.svg';
+
+// Skeleton for Chat Room Item
+const ChatRoomItemSkeleton = ({ isMobile = false }: { isMobile?: boolean }) => (
+  <div className={cn("flex items-center gap-3 animate-pulse", isMobile ? "p-4 min-h-[72px]" : "p-3")}>
+    <div className={cn("bg-slate-700/50 rounded-xl flex-shrink-0", isMobile ? "w-12 h-12" : "w-10 h-10")} />
+    <div className="flex-1 min-w-0 space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="h-4 w-3/5 bg-slate-700/50 rounded" />
+        <div className="h-3 w-1/4 bg-slate-700/50 rounded" />
+      </div>
+      <div className="h-3 w-4/5 bg-slate-700/50 rounded" />
+    </div>
+  </div>
+);
+
+// Skeleton for User Search Item
+const UserSearchItemSkeleton = ({ isMobile = false }: { isMobile?: boolean }) => (
+  <div className={cn("flex items-center gap-4 animate-pulse", isMobile ? "p-4 min-h-[80px]" : "p-4")}>
+    <div className={cn("bg-slate-700/50 rounded-full flex-shrink-0", isMobile ? "w-14 h-14" : "w-12 h-12")} />
+    <div className="flex-1 min-w-0 space-y-3">
+      <div className="h-5 w-1/2 bg-slate-700/50 rounded" />
+      <div className="h-3 w-full bg-slate-700/50 rounded" />
+    </div>
+    <div className="h-8 w-10 bg-slate-700/50 rounded-lg ml-auto" />
+  </div>
+);
+
+// Mobile Bottom Navigation
+const MobileBottomNav = ({ activeTab, setActiveTab }: { activeTab: 'chats' | 'users' | 'connections'; setActiveTab: (tab: 'chats' | 'users' | 'connections') => void; }) => {
+  const navItems = [
+    { id: 'chats', label: 'Chats', icon: MessageCircle },
+    { id: 'users', label: 'Users', icon: Users },
+    { id: 'connections', label: 'Connect', icon: User },
+  ];
+
+  return (
+    <div className="fixed bottom-0 left-0 right-0 h-20 bg-slate-900/80 backdrop-blur-lg border-t border-slate-700/50 z-[60] lg:hidden safe-area-inset-bottom">
+      <div className="flex justify-around items-center h-full max-w-7xl mx-auto px-2">
+        {navItems.map(item => (
+          <button
+            key={item.id}
+            onClick={() => setActiveTab(item.id as 'chats' | 'users' | 'connections')}
+            className={cn(
+              "flex flex-col items-center justify-center gap-1 w-24 h-full rounded-lg transition-all duration-200",
+              activeTab === item.id ? "text-cyan-400" : "text-slate-400 hover:bg-white/5"
+            )}
+            aria-label={item.label}
+          >
+            <item.icon className="size-6 mb-0.5" />
+            <span className={cn(
+              "text-xs font-medium tracking-tight",
+              activeTab === item.id && "font-bold"
+            )}>
+              {item.label}
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+};
 
 // Enhanced Button Component with better mobile touch targets
 const Button = React.forwardRef<
@@ -160,68 +204,86 @@ const Input = React.forwardRef<
 });
 Input.displayName = "Input";
 
-// Profile View Modal Component
-const ProfileViewModal = ({ 
-  user, 
+// Enhanced, self-fetching, and responsive User Profile Modal
+const UserProfileModal = ({ 
+  userId, 
   isOpen, 
-  onClose 
+  onClose,
+  onStartConversation,
 }: { 
-  user: UserForCollaboration | null; 
+  userId: string | null; 
   isOpen: boolean; 
   onClose: () => void; 
+  onStartConversation: (userId: string) => void;
 }) => {
-  if (!isOpen || !user) return null;
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const getStatusColor = () => {
-    switch (user.presenceStatus) {
-      case 'online':
-        return 'bg-green-500 shadow-green-500/50';
-      case 'away':
-        return 'bg-yellow-500 shadow-yellow-500/50';
-      case 'busy':
-        return 'bg-red-500 shadow-red-500/50';
-      default:
-        return 'bg-slate-500';
+  useEffect(() => {
+    if (isOpen && userId) {
+      const fetchProfile = async () => {
+        setLoading(true);
+        setError(null);
+        setProfile(null);
+        try {
+          const dbProfile = await profileService.getUserProfile(userId);
+          if (dbProfile) {
+            const userProfile = profileService.convertToUserProfile(dbProfile);
+            setProfile(userProfile);
+          } else {
+            setError("Could not find this user's profile.");
+          }
+        } catch (e) {
+          setError("There was an error loading the profile.");
+        } finally {
+          setLoading(false);
+        }
+      };
+      fetchProfile();
     }
-  };
+  }, [isOpen, userId]);
 
-  const getConnectionStatusBadge = () => {
-    switch (user.connectionStatus) {
-      case 'accepted':
-        return (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-500/20 border border-green-500/30">
-            <UserCheck className="size-4 text-green-400" />
-            <span className="text-green-300 text-sm font-medium">Connected</span>
+  if (!isOpen) return null;
+
+  const getConnectionStatusBadge = () => (
+    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-500/20 border border-slate-500/30">
+      <User className="size-4 text-slate-400" />
+      <span className="text-slate-300 text-sm font-medium">Unknown</span>
+    </div>
+  );
+  
+  const Skeleton = () => (
+    <div className="relative w-full max-w-md animate-pulse">
+      <div className="h-32 bg-slate-800/80" />
+      <div className="absolute -bottom-12 left-6">
+        <div className="w-24 h-24 rounded-full bg-slate-700/80 border-4 border-slate-900" />
+      </div>
+      <div className="pt-16 p-6 space-y-6">
+        <div className="space-y-3">
+          <div className="flex items-start justify-between">
+            <div>
+              <div className="h-7 w-48 bg-slate-700/80 rounded-lg mb-2" />
+              <div className="h-4 w-64 bg-slate-700/80 rounded-lg" />
+            </div>
+            <div className="h-8 w-24 bg-slate-700/80 rounded-full" />
           </div>
-        );
-      case 'pending':
-        return (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-yellow-500/20 border border-yellow-500/30">
-            <Clock className="size-4 text-yellow-400" />
-            <span className="text-yellow-300 text-sm font-medium">Pending</span>
-          </div>
-        );
-      case 'blocked':
-        return (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-500/20 border border-red-500/30">
-            <UserX className="size-4 text-red-400" />
-            <span className="text-red-300 text-sm font-medium">Blocked</span>
-          </div>
-        );
-      default:
-        return (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-500/20 border border-slate-500/30">
-            <User className="size-4 text-slate-400" />
-            <span className="text-slate-300 text-sm font-medium">Not Connected</span>
-          </div>
-        );
-    }
-  };
+        </div>
+        <div className="space-y-2">
+          <div className="h-4 w-20 bg-slate-700/80 rounded-lg" />
+          <div className="h-12 w-full bg-slate-700/80 rounded-lg" />
+        </div>
+        <div className="flex gap-3 pt-4 border-t border-slate-700/50">
+          <div className="h-11 w-full bg-slate-700/80 rounded-xl" />
+          <div className="h-11 w-full bg-slate-700/80 rounded-xl" />
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <AnimatePresence>
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-        {/* Backdrop */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -230,7 +292,6 @@ const ProfileViewModal = ({
           onClick={onClose}
         />
         
-        {/* Modal */}
         <motion.div
           initial={{ opacity: 0, scale: 0.9, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -238,7 +299,6 @@ const ProfileViewModal = ({
           transition={{ duration: 0.3, ease: "easeOut" }}
           className="relative w-full max-w-md bg-gradient-to-br from-slate-900/95 via-slate-800/90 to-slate-900/95 backdrop-blur-xl border border-slate-700/50 shadow-2xl rounded-3xl overflow-hidden"
         >
-          {/* Close Button */}
           <button
             onClick={onClose}
             className="absolute top-4 right-4 z-10 p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-all duration-200"
@@ -246,106 +306,78 @@ const ProfileViewModal = ({
             <X className="size-5" />
           </button>
 
-          {/* Cover Photo Area */}
-          <div className="relative h-32 bg-gradient-to-r from-cyan-500/20 to-purple-500/20">
-            <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
-            
-            {/* Profile Picture */}
-            <div className="absolute -bottom-12 left-6">
-              <div className="relative">
-                <div className="w-24 h-24 rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 flex items-center justify-center text-white text-2xl font-bold border-4 border-slate-900 shadow-xl overflow-hidden">
-                  {user.profilePhoto ? (
-                    <img
-                      src={user.profilePhoto}
-                      alt={user.fullName + "'s avatar"}
-                      className="w-full h-full object-cover rounded-full"
-                      onError={e => { (e.currentTarget as HTMLImageElement).src = DEFAULT_AVATAR; }}
-                    />
-                  ) : (
-                    <img
-                      src={DEFAULT_AVATAR}
-                      alt="Default avatar"
-                      className="w-full h-full object-cover rounded-full"
-                    />
-                  )}
-                </div>
-                {/* Status Indicator */}
-                <div className={cn(
-                  "absolute -bottom-1 -right-1 w-6 h-6 rounded-full border-2 border-slate-900",
-                  getStatusColor()
-                )} />
-              </div>
+          {loading ? <Skeleton /> : error || !profile ? (
+            <div className="p-10 text-center">
+              <AlertCircle className="size-12 mx-auto text-red-400/80 mb-4" />
+              <h3 className="text-xl font-bold text-white mb-2">Error</h3>
+              <p className="text-slate-400">{error || "Could not load profile."}</p>
             </div>
-          </div>
-
-          {/* Content */}
-          <div className="pt-16 p-6 space-y-6">
-            {/* User Info */}
-            <div className="space-y-3">
-              <div className="flex items-start justify-between">
-                <div>
-                  <h2 className="text-2xl font-bold text-white">{user.fullName}</h2>
-                  <p className="text-slate-400 text-sm">{user.email}</p>
-                </div>
-                {getConnectionStatusBadge()}
-              </div>
-
-              {/* Status */}
-              <div className="flex items-center gap-2 text-sm">
-                <div className={cn("w-2 h-2 rounded-full", getStatusColor())} />
-                <span className="text-slate-300 capitalize">{user.presenceStatus}</span>
-                <span className="text-slate-500">•</span>
-                <span className="text-slate-400">
-                  Last seen {new Date(user.lastSeen).toLocaleDateString()}
-                </span>
-              </div>
-            </div>
-
-            {/* Bio */}
-            {user.bio && (
-              <div className="space-y-2">
-                <h3 className="text-sm font-semibold text-white">About</h3>
-                <p className="text-slate-300 text-sm leading-relaxed">{user.bio}</p>
-              </div>
-            )}
-
-            {/* Location */}
-            {user.location && (
-              <div className="flex items-center gap-2">
-                <MapPin className="size-4 text-slate-400" />
-                <span className="text-slate-300 text-sm">{user.location}</span>
-              </div>
-            )}
-
-            {/* Interests */}
-            {user.interests.length > 0 && (
-              <div className="space-y-3">
-                <h3 className="text-sm font-semibold text-white">Interests</h3>
-                <div className="flex flex-wrap gap-2">
-                  {user.interests.map((interest, index) => (
-                    <span
-                      key={index}
-                      className="px-3 py-1.5 bg-cyan-500/20 text-cyan-300 rounded-full text-xs font-medium border border-cyan-500/30"
-                    >
-                      {interest}
-                    </span>
-                  ))}
+          ) : (
+            <>
+              <div className="relative h-32 bg-gradient-to-r from-cyan-500/20 to-purple-500/20">
+                <img src={profile.coverPhoto || '/public/images/layer.png'} alt="Cover" className="w-full h-full object-cover"/>
+                <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
+                
+                <div className="absolute -bottom-12 left-6">
+                  <div className="relative">
+                    <div className="w-24 h-24 rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 flex items-center justify-center text-white text-2xl font-bold border-4 border-slate-900 shadow-xl overflow-hidden">
+                      <img
+                        src={profile.profilePhoto || DEFAULT_AVATAR}
+                        alt={profile.fullName + "'s avatar"}
+                        className="w-full h-full object-cover rounded-full"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
-            )}
 
-            {/* Actions */}
-            <div className="flex gap-3 pt-4 border-t border-slate-700/50">
-              <Button variant="primary" className="flex-1">
-                <MessageSquare className="size-4 mr-2" />
-                Message
-              </Button>
-              <Button variant="outline" className="flex-1">
-                <UserPlus className="size-4 mr-2" />
-                Connect
-              </Button>
-            </div>
-          </div>
+              <div className="pt-16 p-6 space-y-6">
+                <div className="space-y-3">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h2 className="text-2xl font-bold text-white">{profile.fullName}</h2>
+                      <p className="text-slate-400 text-sm">{profile.email}</p>
+                    </div>
+                    {getConnectionStatusBadge()}
+                  </div>
+                </div>
+
+                {profile.bio && (
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-semibold text-white">About</h3>
+                    <p className="text-slate-300 text-sm leading-relaxed">{profile.bio}</p>
+                  </div>
+                )}
+
+                {profile.location && (
+                  <div className="flex items-center gap-2">
+                    <MapPin className="size-4 text-slate-400" />
+                    <span className="text-slate-300 text-sm">{profile.location}</span>
+                  </div>
+                )}
+
+                {profile.interests && profile.interests.length > 0 && (
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-semibold text-white">Interests</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {profile.interests.map((interest, index) => (
+                        <span key={index} className="px-3 py-1.5 bg-cyan-500/20 text-cyan-300 rounded-full text-xs font-medium border border-cyan-500/30">
+                          {interest}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex gap-3 pt-4 border-t border-slate-700/50">
+                  <Button variant="primary" className="flex-1" onClick={() => onStartConversation(userId!)}>
+                    <MessageSquare className="size-4 mr-2" />
+                    Message
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
         </motion.div>
       </div>
     </AnimatePresence>
@@ -377,8 +409,10 @@ const ChatRoomItem = ({
     }
   };
 
-  const formatTime = (dateString: string) => {
+  const formatTime = (dateString: string | undefined) => {
+    if (!dateString) return '';
     const date = new Date(dateString);
+    // No need to check for invalid date here, as it's handled in the service
     const now = new Date();
     const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
     
@@ -479,14 +513,17 @@ const MessageItem = ({
   onAvatarClick?: () => void;
 }) => {
   const formatTime = (dateString: string) => {
-    return new Date(dateString).toLocaleTimeString([], { 
+    // No more complex parsing needed here, the service provides a valid ISO string
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return date.toLocaleTimeString([], { 
       hour: '2-digit', 
       minute: '2-digit' 
     });
   };
 
   const getMessageTypeIcon = () => {
-    switch (message.messageType) {
+    switch (message.message_type) {
       case 'image':
         return <ImageIcon className="size-3" />;
       case 'file':
@@ -500,7 +537,7 @@ const MessageItem = ({
     }
   };
 
-  if (message.messageType === 'system') {
+  if (message.message_type === 'system') {
     return (
       <div className="flex justify-center my-4">
         <div className="bg-white/10 text-slate-300 text-sm px-4 py-2 rounded-full flex items-center gap-2 max-w-[85%] text-center">
@@ -537,12 +574,12 @@ const MessageItem = ({
             isMobile ? "w-10 h-10" : "w-10 h-10"
           )}
           style={{ padding: 0, overflow: 'hidden' }}
-          aria-label={`View profile of ${message.senderName}`}
+          aria-label={`View profile of ${message.sender_name}`}
         >
-          {message.senderPhoto ? (
+          {message.sender_photo ? (
             <img
-              src={message.senderPhoto}
-              alt={message.senderName + "'s avatar"}
+              src={message.sender_photo}
+              alt={message.sender_name + "'s avatar"}
               className="w-full h-full object-cover rounded-full"
               onError={e => { (e.currentTarget as HTMLImageElement).src = DEFAULT_AVATAR; }}
             />
@@ -568,15 +605,15 @@ const MessageItem = ({
             onClick={onAvatarClick}
             className="text-sm text-slate-400 font-medium px-1 hover:text-cyan-400 transition-colors cursor-pointer"
           >
-            {message.senderName}
+            {message.sender_name}
           </button>
         )}
 
         {/* Reply Context */}
-        {message.replyTo && message.replyContent && (
+        {message.reply_to && message.reply_content && (
           <div className="bg-white/5 border-l-2 border-cyan-500 pl-3 py-2 rounded-r-lg max-w-full">
             <p className="text-xs text-slate-400 truncate">
-              {message.replyContent}
+              {message.reply_content}
             </p>
           </div>
         )}
@@ -613,8 +650,8 @@ const MessageItem = ({
           "text-xs text-slate-500 flex items-center gap-1 px-1",
           isOwn ? "justify-end" : "justify-start"
         )}>
-          <span>{formatTime(message.createdAt)}</span>
-          {message.editedAt && (
+          <span>{formatTime(message.created_at)}</span>
+          {message.edited_at && (
             <span className="text-slate-600">(edited)</span>
           )}
           {isOwn && (
@@ -629,85 +666,17 @@ const MessageItem = ({
 // Mobile-optimized User Search Item Component
 const UserSearchItem = ({ 
   user, 
-  onConnect, 
-  onMessage,
-  onConnectionResponse,
   onProfileClick,
-  isMobile = false
+  isMobile = false,
 }: { 
   user: UserForCollaboration; 
-  onConnect: () => void; 
-  onMessage: () => void;
-  onConnectionResponse?: (response: 'accepted' | 'declined') => void;
   onProfileClick?: () => void;
   isMobile?: boolean;
 }) => {
-  const getStatusColor = () => {
-    switch (user.presenceStatus) {
-      case 'online':
-        return 'bg-green-500 connection-status-online';
-      case 'away':
-        return 'bg-yellow-500 connection-status-away';
-      case 'busy':
-        return 'bg-red-500 connection-status-busy';
-      default:
-        return 'bg-slate-500 connection-status-offline';
-    }
-  };
-
-  const getConnectionButton = () => {
-    switch (user.connectionStatus) {
-      case 'none':
-        return (
-          <Button size={isMobile ? "sm" : "xs"} variant="primary" onClick={onConnect}>
-            <UserPlus className="size-4 mr-1" />
-            {!isMobile && "Connect"}
-          </Button>
-        );
-      case 'pending':
-        return (
-          <div className="flex gap-1">
-            {onConnectionResponse && (
-              <>
-                <Button size="xs" variant="success" onClick={() => onConnectionResponse('accepted')}>
-                  <Check className="size-4" />
-                </Button>
-                <Button size="xs" variant="danger" onClick={() => onConnectionResponse('declined')}>
-                  <X className="size-4" />
-                </Button>
-              </>
-            )}
-            <Button size={isMobile ? "sm" : "xs"} variant="secondary" disabled>
-              <Clock className="size-4 mr-1" />
-              {!isMobile && "Pending"}
-            </Button>
-          </div>
-        );
-      case 'accepted':
-        return (
-          <Button size={isMobile ? "sm" : "xs"} variant="success" disabled>
-            <UserCheck className="size-4 mr-1" />
-            {!isMobile && "Connected"}
-          </Button>
-        );
-      case 'declined':
-        return (
-          <Button size={isMobile ? "sm" : "xs"} variant="outline" onClick={onConnect}>
-            <UserPlus className="size-4 mr-1" />
-            {!isMobile && "Retry"}
-          </Button>
-        );
-      case 'blocked':
-        return (
-          <Button size={isMobile ? "sm" : "xs"} variant="danger" disabled>
-            <UserX className="size-4 mr-1" />
-            {!isMobile && "Blocked"}
-          </Button>
-        );
-      default:
-        return null;
-    }
-  };
+  // Warn if connectionId is missing for pending/received
+  if ((user.connectionStatus === 'pending' || user.connectionStatus === 'received') && !user.connectionId) {
+    console.warn(`User ${user.userId} (${user.fullName}) has status '${user.connectionStatus}' but no connectionId. Accept/decline/cancel will not work!`);
+  }
 
   return (
     <motion.div
@@ -744,11 +713,6 @@ const UserSearchItem = ({
             />
           )}
         </button>
-        <div className={cn(
-          "absolute -bottom-1 -right-1 rounded-full border-2 border-slate-900",
-          isMobile ? "w-5 h-5" : "w-4 h-4",
-          getStatusColor()
-        )} />
       </div>
 
       {/* User Info */}
@@ -810,19 +774,6 @@ const UserSearchItem = ({
           </div>
         )}
       </div>
-
-      {/* Actions */}
-      <div className={cn(
-        "flex gap-2 flex-shrink-0",
-        isMobile ? "flex-col" : "flex-row"
-      )}>
-        {user.connectionStatus === 'accepted' && (
-          <Button size={isMobile ? "sm" : "xs"} variant="outline" onClick={onMessage}>
-            <MessageSquare className="size-4" />
-          </Button>
-        )}
-        {getConnectionButton()}
-      </div>
     </motion.div>
   );
 };
@@ -830,14 +781,18 @@ const UserSearchItem = ({
 // Mobile-optimized Connection Item Component
 const ConnectionItem = ({ 
   connection, 
-  onMessage, 
-  onRespond,
-  isMobile = false
+  onAccept,
+  onDecline,
+  onCancel,
+  isMobile = false,
+  isProcessing = false,
 }: { 
   connection: UserConnection; 
-  onMessage: () => void; 
-  onRespond?: (response: 'accepted' | 'declined') => void;
+  onAccept: (connectionId: string) => void;
+  onDecline: (connectionId: string) => void;
+  onCancel: (connectionId: string) => void;
   isMobile?: boolean;
+  isProcessing?: boolean;
 }) => {
   return (
     <motion.div
@@ -881,25 +836,21 @@ const ConnectionItem = ({
       </div>
 
       {/* Actions */}
-      <div className={cn(
-        "flex gap-2 flex-shrink-0",
-        isMobile ? "flex-col" : "flex-row"
-      )}>
-        {connection.status === 'accepted' && (
-          <Button size={isMobile ? "sm" : "xs"} variant="outline" onClick={onMessage}>
-            <MessageSquare className="size-4" />
-          </Button>
-        )}
-        
-        {!connection.isRequester && connection.status === 'pending' && onRespond && (
+      <div className="flex gap-2 flex-shrink-0">
+        {connection.status === 'pending' && !connection.isRequester && (
           <>
-            <Button size={isMobile ? "sm" : "xs"} variant="success" onClick={() => onRespond('accepted')}>
+            <Button size="sm" variant="success" onClick={() => onAccept(connection.id)} loading={isProcessing}>
               <Check className="size-4" />
             </Button>
-            <Button size={isMobile ? "sm" : "xs"} variant="danger" onClick={() => onRespond('declined')}>
-              <X className="size-4" />
+            <Button size="sm" variant="danger" onClick={() => onDecline(connection.id)} loading={isProcessing}>
+              <XCircle className="size-4" />
             </Button>
           </>
+        )}
+        {connection.status === 'pending' && connection.isRequester && (
+          <Button size="sm" variant="outline" onClick={() => onCancel(connection.id)} loading={isProcessing}>
+            <MinusCircle className="size-4" />
+          </Button>
         )}
       </div>
     </motion.div>
@@ -935,7 +886,7 @@ const TypingIndicator = ({ typingUsers, isMobile = false }: { typingUsers: strin
 };
 
 // Main Chat Component with enhanced real-time messaging
-export const Chat: React.FC = () => {
+export default function Chat() {
   const [, setScreenState] = useAtom(screenAtom);
   const [activeTab, setActiveTab] = useState<'chats' | 'users' | 'connections'>('chats');
   const [messageInput, setMessageInput] = useState('');
@@ -945,11 +896,14 @@ export const Chat: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [newMessageIds, setNewMessageIds] = useState<Set<string>>(new Set());
-  const [selectedUser, setSelectedUser] = useState<UserForCollaboration | null>(null);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [processingConnection, setProcessingConnection] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageInputRef = useRef<HTMLInputElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
+  const { user } = useAuthContext();
+  const [profilePhoto, setProfilePhoto] = useState<string | undefined>(undefined);
 
   // Hooks
   const { isAuthenticated, isLoading } = useAuthGuard({
@@ -967,13 +921,10 @@ export const Chat: React.FC = () => {
     errorMessages,
     setCurrentRoom,
     sendMessage,
-    createDirectMessage,
-    createGroupChat,
-    markAsRead,
     isConnected,
     typingUsers,
     sendTyping,
-    loadChatRooms,
+    createDirectMessage,
   } = useChat();
 
   const {
@@ -982,11 +933,10 @@ export const Chat: React.FC = () => {
     error: errorUsers,
     searchTerm,
     setSearchTerm,
-    sendConnectionRequest,
-    createDirectMessage: createDMFromSearch,
+    acceptConnection,
+    declineConnection,
+    cancelConnection,
   } = useUserSearch();
-
-  const { user } = useAuthContext();
 
   // Detect mobile screen size
   useEffect(() => {
@@ -1030,7 +980,7 @@ export const Chat: React.FC = () => {
   useEffect(() => {
     if (currentRoomMessages.length > 0) {
       const latestMessage = currentRoomMessages[currentRoomMessages.length - 1];
-      const messageAge = Date.now() - new Date(latestMessage.createdAt).getTime();
+      const messageAge = Date.now() - new Date(latestMessage.created_at).getTime();
       
       // Consider messages newer than 5 seconds as "new"
       if (messageAge < 5000) {
@@ -1120,63 +1070,110 @@ export const Chat: React.FC = () => {
     }
   };
 
-  // Handle user connection
-  const handleConnectUser = async (user: UserForCollaboration) => {
-    try {
-      await sendConnectionRequest(user.userId, 'collaborate');
-    } catch (error) {
-      console.error('Failed to send connection request:', error);
-      alert(error instanceof Error ? error.message : 'Failed to send connection request');
-    }
-  };
-
-  // Handle create DM from user search
-  const handleMessageUser = async (user: UserForCollaboration) => {
-    try {
-      const roomId = await chatService.getOrCreateDMRoom(user.userId);
-      setCurrentRoom(roomId);
-      setActiveTab('chats');
-      await loadChatRooms();
-    } catch (error) {
-      console.error('Failed to create DM:', error);
-      alert(error instanceof Error ? error.message : 'Failed to create chat');
-    }
-  };
-
-  // Handle connection response
-  const handleConnectionResponse = async (connectionId: string, response: 'accepted' | 'declined') => {
-    try {
-      await chatService.respondToConnectionRequest(connectionId, response);
-      await loadConnections();
-      await loadChatRooms();
-    } catch (error) {
-      console.error('Failed to respond to connection:', error);
-      alert(error instanceof Error ? error.message : 'Failed to respond to connection');
-    }
-  };
-
-  // Handle message connection
-  const handleMessageConnection = async (connection: UserConnection) => {
-    try {
-      const roomId = await chatService.getOrCreateDMRoom(connection.otherUserId);
-      setCurrentRoom(roomId);
-      setActiveTab('chats');
-      await loadChatRooms();
-    } catch (error) {
-      console.error('Failed to create DM:', error);
-      alert(error instanceof Error ? error.message : 'Failed to create chat');
-    }
-  };
-
   // Handle profile view
-  const handleProfileClick = (user: UserForCollaboration) => {
-    setSelectedUser(user);
+  const handleProfileClick = (userId: string) => {
+    setSelectedUserId(userId);
     setIsProfileModalOpen(true);
+  };
+
+  // Handle starting a conversation from the profile modal
+  const handleStartConversation = async (targetUserId: string) => {
+    if (!targetUserId) return;
+    try {
+      const roomId = await createDirectMessage(targetUserId);
+      if (roomId) {
+        setCurrentRoom(roomId);
+        setActiveTab('chats');
+        setIsProfileModalOpen(false);
+        if (isMobile) {
+          setIsSidebarOpen(false);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to start conversation:', error);
+      alert('Could not start a conversation with this user.');
+    }
   };
 
   // Handle close chat
   const handleClose = () => {
     setScreenState({ currentScreen: "intro" });
+  };
+
+  // Fetch user profile photo for current user
+  useEffect(() => {
+    let isMounted = true;
+    async function fetchProfilePhoto() {
+      if (user?.id) {
+        try {
+          const dbProfile = await profileService.getUserProfile(user.id);
+          let photo: string | undefined = undefined;
+          if (dbProfile) {
+            const userProfile = profileService.convertToUserProfile(dbProfile);
+            photo = userProfile.profilePhoto;
+          }
+          if (isMounted) setProfilePhoto(photo);
+        } catch {
+          if (isMounted) setProfilePhoto(undefined);
+        }
+      } else {
+        setProfilePhoto(undefined);
+      }
+    }
+    fetchProfilePhoto();
+    return () => { isMounted = false; };
+  }, [user]);
+
+  // Handle accept/decline/cancel for connections
+  const handleAccept = async (connectionId: string, userId: string) => {
+    setProcessingConnection(userId);
+    try {
+      await acceptConnection(connectionId, userId);
+      // Refresh user search and connections
+      const currentSearch = searchTerm;
+      setSearchTerm(currentSearch + ' ');
+      setSearchTerm(currentSearch);
+      await loadConnections();
+    } catch (error) {
+      console.error('Accept connection failed:', error);
+      alert(error instanceof Error ? error.message : 'Failed to accept connection request');
+    } finally {
+      setProcessingConnection(null);
+    }
+  };
+
+  const handleDecline = async (connectionId: string, userId: string) => {
+    setProcessingConnection(userId);
+    try {
+      await declineConnection(connectionId, userId);
+      // Refresh user search and connections
+      const currentSearch = searchTerm;
+      setSearchTerm(currentSearch + ' ');
+      setSearchTerm(currentSearch);
+      await loadConnections();
+    } catch (error) {
+      console.error('Decline connection failed:', error);
+      alert(error instanceof Error ? error.message : 'Failed to decline connection request');
+    } finally {
+      setProcessingConnection(null);
+    }
+  };
+
+  const handleCancel = async (connectionId: string, userId: string) => {
+    setProcessingConnection(userId);
+    try {
+      await cancelConnection(connectionId, userId);
+      // Refresh user search and connections
+      const currentSearch = searchTerm;
+      setSearchTerm(currentSearch + ' ');
+      setSearchTerm(currentSearch);
+      await loadConnections();
+    } catch (error) {
+      console.error('Cancel connection failed:', error);
+      alert(error instanceof Error ? error.message : 'Failed to cancel connection request');
+    } finally {
+      setProcessingConnection(null);
+    }
   };
 
   // Show loading while checking authentication
@@ -1235,49 +1232,6 @@ export const Chat: React.FC = () => {
                 </Button>
               )}
             </div>
-
-            {/* Tab Switcher */}
-            <div className="flex bg-white/10 rounded-xl p-1">
-              <button
-                onClick={() => setActiveTab('chats')}
-                className={cn(
-                  "flex-1 py-2 px-2 rounded-lg font-medium transition-all duration-200 text-center",
-                  isMobile ? "text-xs" : "text-sm",
-                  activeTab === 'chats'
-                    ? "bg-cyan-500 text-white"
-                    : "text-slate-400 hover:text-white"
-                )}
-              >
-                <MessageCircle className="size-4 inline mr-1" />
-                Chats
-              </button>
-              <button
-                onClick={() => setActiveTab('users')}
-                className={cn(
-                  "flex-1 py-2 px-2 rounded-lg font-medium transition-all duration-200 text-center",
-                  isMobile ? "text-xs" : "text-sm",
-                  activeTab === 'users'
-                    ? "bg-cyan-500 text-white"
-                    : "text-slate-400 hover:text-white"
-                )}
-              >
-                <Users className="size-4 inline mr-1" />
-                Users
-              </button>
-              <button
-                onClick={() => setActiveTab('connections')}
-                className={cn(
-                  "flex-1 py-2 px-2 rounded-lg font-medium transition-all duration-200 text-center",
-                  isMobile ? "text-xs" : "text-sm",
-                  activeTab === 'connections'
-                    ? "bg-cyan-500 text-white"
-                    : "text-slate-400 hover:text-white"
-                )}
-              >
-                <UserCheck className="size-4 inline mr-1" />
-                Connect
-              </button>
-            </div>
           </div>
 
           {/* Content */}
@@ -1301,10 +1255,10 @@ export const Chat: React.FC = () => {
                   </div>
 
                   {/* Chat Rooms List */}
-                  <div className="flex-1 overflow-y-auto px-4 space-y-2 pb-4 hide-scrollbar">
+                  <div className="flex-1 overflow-y-auto px-4 space-y-2 pb-24 lg:pb-4 hide-scrollbar">
                     {loadingRooms ? (
-                      <div className="flex items-center justify-center py-8">
-                        <Loader2 className="size-6 animate-spin text-cyan-400" />
+                      <div className="space-y-2">
+                        {Array.from({ length: 8 }).map((_, i) => <ChatRoomItemSkeleton key={i} isMobile={isMobile} />)}
                       </div>
                     ) : errorRooms ? (
                       <div className="text-center py-8 text-red-400">
@@ -1350,10 +1304,10 @@ export const Chat: React.FC = () => {
                   </div>
 
                   {/* Users List */}
-                  <div className="flex-1 overflow-y-auto px-4 space-y-3 pb-4 hide-scrollbar">
+                  <div className="flex-1 overflow-y-auto px-4 space-y-3 pb-24 lg:pb-4 hide-scrollbar">
                     {loadingUsers ? (
-                      <div className="flex items-center justify-center py-8">
-                        <Loader2 className="size-6 animate-spin text-cyan-400" />
+                      <div className="space-y-3">
+                        {Array.from({ length: 6 }).map((_, i) => <UserSearchItemSkeleton key={i} isMobile={isMobile} />)}
                       </div>
                     ) : errorUsers ? (
                       <div className="text-center py-8 text-red-400">
@@ -1371,9 +1325,7 @@ export const Chat: React.FC = () => {
                         <UserSearchItem
                           key={user.userId}
                           user={user}
-                          onConnect={() => handleConnectUser(user)}
-                          onMessage={() => handleMessageUser(user)}
-                          onProfileClick={() => handleProfileClick(user)}
+                          onProfileClick={() => handleProfileClick(user.userId)}
                           isMobile={isMobile}
                         />
                       ))
@@ -1405,14 +1357,13 @@ export const Chat: React.FC = () => {
                   </div>
 
                   {/* Connections List */}
-                  <div className="flex-1 overflow-y-auto px-4 space-y-3 pb-4 hide-scrollbar">
+                  <div className="flex-1 overflow-y-auto px-4 space-y-3 pb-24 lg:pb-4 hide-scrollbar">
                     {loadingConnections ? (
                       <div className="flex items-center justify-center py-8">
                         <Loader2 className="size-6 animate-spin text-cyan-400" />
                       </div>
                     ) : connections.length === 0 ? (
                       <div className="text-center py-8 text-slate-400">
-                        <UserCheck className="size-12 mx-auto mb-4 opacity-50" />
                         <p className={isMobile ? "text-base" : "text-sm"}>No connections yet</p>
                         <p className={isMobile ? "text-sm" : "text-xs"}>Start connecting with users!</p>
                       </div>
@@ -1421,9 +1372,11 @@ export const Chat: React.FC = () => {
                         <ConnectionItem
                           key={connection.id}
                           connection={connection}
-                          onMessage={() => handleMessageConnection(connection)}
-                          onRespond={(response) => handleConnectionResponse(connection.id, response)}
+                          onAccept={(connectionId) => handleAccept(connectionId, connection.otherUserId)}
+                          onDecline={(connectionId) => handleDecline(connectionId, connection.otherUserId)}
+                          onCancel={(connectionId) => handleCancel(connectionId, connection.otherUserId)}
                           isMobile={isMobile}
+                          isProcessing={processingConnection === connection.otherUserId}
                         />
                       ))
                     )}
@@ -1435,14 +1388,38 @@ export const Chat: React.FC = () => {
         </div>
 
         {/* Main Chat Area */}
-        <div className="flex-1 flex flex-col bg-gradient-to-br from-slate-900/95 to-slate-800/95 backdrop-blur-xl">
+        <div className="flex-1 flex flex-col bg-gradient-to-br from-slate-900/95 to-slate-800/95 backdrop-blur-xl pb-20 lg:pb-0">
           
           {/* Persistent Main Chat Header */}
           <div className="sticky top-0 z-30 p-4 border-b border-slate-700/50 flex items-center justify-between flex-shrink-0 chat-header bg-slate-900/95 backdrop-blur shadow-md min-h-[64px]">
+            {/* Mobile-only menu button */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setIsSidebarOpen(true)}
+              className="lg:hidden -ml-2"
+              aria-label="Open menu"
+            >
+              <Menu className="size-5" />
+            </Button>
+
             {currentRoomId ? (
               <div className="flex items-center gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 flex items-center justify-center">
-                  <MessageCircle className="size-5 text-white" />
+                <div className="w-10 h-10 rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 flex items-center justify-center overflow-hidden">
+                  {profilePhoto ? (
+                    <img
+                      src={profilePhoto}
+                      alt="Your avatar"
+                      className="w-full h-full object-cover rounded-full"
+                      onError={e => { (e.currentTarget as HTMLImageElement).src = DEFAULT_AVATAR; }}
+                    />
+                  ) : (
+                    <img
+                      src={DEFAULT_AVATAR}
+                      alt="Default avatar"
+                      className="w-full h-full object-cover rounded-full"
+                    />
+                  )}
                 </div>
                 <div className="min-w-0">
                   <h2
@@ -1467,8 +1444,21 @@ export const Chat: React.FC = () => {
               </div>
             ) : (
               <div className="flex items-center gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 flex items-center justify-center">
-                  <MessageCircle className="size-5 text-white" />
+                <div className="w-10 h-10 rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 flex items-center justify-center overflow-hidden">
+                  {profilePhoto ? (
+                    <img
+                      src={profilePhoto}
+                      alt="Your avatar"
+                      className="w-full h-full object-cover rounded-full"
+                      onError={e => { (e.currentTarget as HTMLImageElement).src = DEFAULT_AVATAR; }}
+                    />
+                  ) : (
+                    <img
+                      src={DEFAULT_AVATAR}
+                      alt="Default avatar"
+                      className="w-full h-full object-cover rounded-full"
+                    />
+                  )}
                 </div>
                 <div className="min-w-0">
                   <h2 className="font-semibold text-white truncate max-w-xs md:max-w-md lg:max-w-xl" title="Collaboration Hub">
@@ -1527,8 +1517,8 @@ export const Chat: React.FC = () => {
                       const { index, style, data } = props;
                       const { messages, user, newMessageIds, isMobile, handleProfileClick } = data;
                       const message = messages[index];
-                      const isOwn = user && message.senderId === user.id;
-                      const showSender = index === 0 || messages[index - 1].senderId !== message.senderId;
+                      const isOwn = user && message.sender_id === user.id;
+                      const showSender = index === 0 || messages[index - 1].sender_id !== message.sender_id;
                       const isNew = newMessageIds.has(message.id);
                       return (
                         <div style={style} key={message.id}>
@@ -1539,19 +1529,7 @@ export const Chat: React.FC = () => {
                             isMobile={isMobile}
                             isNew={isNew}
                             onAvatarClick={() => {
-                              const userObj: UserForCollaboration = {
-                                userId: message.senderId,
-                                fullName: message.senderName,
-                                email: '',
-                                bio: '',
-                                profilePhoto: message.senderPhoto,
-                                location: '',
-                                interests: [],
-                                connectionStatus: 'none',
-                                lastSeen: message.createdAt,
-                                presenceStatus: 'offline',
-                              };
-                              handleProfileClick(userObj);
+                              handleProfileClick(message.sender_id);
                             }}
                           />
                         </div>
@@ -1671,14 +1649,18 @@ export const Chat: React.FC = () => {
       </div>
 
       {/* Profile View Modal */}
-      <ProfileViewModal
-        user={selectedUser}
+      <UserProfileModal
+        userId={selectedUserId}
         isOpen={isProfileModalOpen}
         onClose={() => {
           setIsProfileModalOpen(false);
-          setSelectedUser(null);
+          setSelectedUserId(null);
         }}
+        onStartConversation={handleStartConversation}
       />
+
+      {/* Mobile Bottom Nav */}
+      {isMobile && <MobileBottomNav activeTab={activeTab} setActiveTab={setActiveTab} />}
     </div>
   );
-};
+}

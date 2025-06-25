@@ -14,6 +14,7 @@
     "@daily-co/daily-react": "^0.22.0",
     "@radix-ui/react-slot": "^1.1.0",
     "@supabase/supabase-js": "^2.50.0",
+    "browser-image-compression": "^2.0.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "flubber": "^0.4.2",
@@ -27,7 +28,8 @@
     "react-tsparticles": "^2.12.2",
     "react-window": "^1.8.11",
     "tailwind-merge": "^2.5.3",
-    "tailwindcss-animate": "^1.0.7"
+    "tailwindcss-animate": "^1.0.7",
+    "uuid": "^11.1.0"
   },
   "devDependencies": {
     "@types/flubber": "^0.4.0",
@@ -36,6 +38,7 @@
     "@types/react": "^18.3.8",
     "@types/react-dom": "^18.3.0",
     "@types/react-window": "^1.8.8",
+    "@types/uuid": "^10.0.0",
     "@typescript-eslint/eslint-plugin": "^7.17.0",
     "@typescript-eslint/parser": "^7.17.0",
     "@vitejs/plugin-react": "^4.3.2",

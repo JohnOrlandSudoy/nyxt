@@ -62,7 +62,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setUser(session?.user ?? null);
         
         // Only handle profile creation for successful sign-ins and sign-ups
-        if ((event === 'SIGNED_IN' || event === 'SIGNED_UP') && session?.user) {
+        if ((event === 'SIGNED_IN') && session?.user) {
           // Don't await this - let it happen in background
           createOrUpdateProfile(session.user).catch(error => {
             console.error('Background profile creation failed:', error);
@@ -259,7 +259,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         if (data.session) {
           // Give a longer delay to ensure the auth trigger has fired
           setTimeout(() => {
-            createOrUpdateProfile(data.user).catch(error => {
+            createOrUpdateProfile(data.user as User).catch(error => {
               console.error('Profile creation failed during sign up, but user is authenticated:', error);
             });
           }, 2000);

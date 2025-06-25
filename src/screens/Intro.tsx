@@ -1,15 +1,12 @@
-import { AnimatedWrapper } from "@/components/DialogWrapper";
 import React, { useState, useEffect } from "react";
 import { useAtom } from "jotai";
 import { screenAtom } from "@/store/screens";
 import { Unlock, Key, Shield, Sparkles, ArrowRight, Eye, EyeOff } from "lucide-react";
 import AudioButton from "@/components/AudioButton";
 import { apiTokenAtom } from "@/store/tokens";
-import { Input } from "@/components/ui/input";
-import gloriaVideo from "@/assets/video/gloria.mp4";
 import { motion } from "framer-motion";
-import { useAuthContext } from "@/components/AuthProvider";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
+import gloriaVideo from "@/assets/video/gloria.mp4";
 
 // Premium NyxtGen Logo Component
 const PremiumLogo = ({ isMobile = false }: { isMobile?: boolean }) => {
@@ -153,7 +150,6 @@ export const Intro: React.FC = () => {
   const [token, setToken] = useAtom(apiTokenAtom);
   const [showPassword, setShowPassword] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
-  const { user } = useAuthContext();
   
   // Enforce authentication for this screen with optimized loading
   const { isAuthenticated, isLoading } = useAuthGuard({
@@ -360,3 +356,5 @@ export const Intro: React.FC = () => {
     </div>
   );
 };
+
+export default Intro;
