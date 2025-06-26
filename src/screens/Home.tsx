@@ -258,7 +258,7 @@ export const Home: React.FC = () => {
             <div className="relative">
               <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-cyan-400/30 to-purple-500/30 blur-2xl animate-pulse" />
               <img 
-                src="/images/vector.svg" 
+                src="/images/logo.svg" 
                 alt="NyxtGen Logo" 
                 className={`relative drop-shadow-2xl ${isMobile ? 'w-12 h-12' : 'w-16 h-16 sm:w-20 sm:h-20'}`}
               />
